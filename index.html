@@ -1,0 +1,1160 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>李寄斬蛇 - 搜神記經典RPG</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* ==================== 【強制重置所有樣式，避免衝突】 ==================== */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            overscroll-behavior-y: contain;
+            touch-action: none;
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            user-select: none;
+            background-color: #0f172a !important;
+        }
+        
+        /* ==================== 【絕對正確的地圖容器樣式】 ==================== */
+        #scene-explore {
+            position: absolute !important;
+            top: 0 !important;
+            left: 0 !important;
+            width: 100% !important;
+            height: 100% !important;
+            background-color: #000 !important;
+            z-index: 10 !important;
+        }
+        
+        #map-grid {
+            position: absolute !important;
+            top: 0 !important;
+            left: 0 !important;
+            width: 100% !important;
+            height: 100% !important;
+            display: grid !important;
+            grid-template-columns: repeat(10, 1fr) !important;
+            grid-template-rows: repeat(10, 1fr) !important;
+            z-index: 1 !important;
+            background-color: #1e293b !important;
+        }
+        
+        #entity-layer {
+            position: absolute !important;
+            top: 0 !important;
+            left: 0 !important;
+            width: 100% !important;
+            height: 100% !important;
+            pointer-events: none !important;
+            z-index: 2 !important;
+        }
+        
+        /* ==================== 【修復對話框立繪顯示】 ==================== */
+        #dialogue-portrait {
+            display: block !important;
+            width: 100% !important;
+            height: 100% !important;
+            object-fit: cover !important;
+            position: absolute !important;
+            inset: 0 !important;
+            z-index: 1 !important;
+        }
+        
+        #dialogue-portrait-fallback {
+            position: absolute !important;
+            inset: 0 !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            z-index: 2 !important;
+        }
+        
+        /* ==================== 【關鍵：優化移動動畫，消除閃爍】 ==================== */
+        .grid-entity {
+            will-change: transform, left, top;
+            transition: transform 0.15s linear, left 0.15s linear, top 0.15s linear;
+        }
+        
+        /* ====================================================================== */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 10px; }
+
+        @keyframes shake {
+            0% { transform: translate(1px, 1px) rotate(0deg); }
+            10% { transform: translate(-1px, -2px) rotate(-1deg); }
+            20% { transform: translate(-3px, 0px) rotate(1deg); }
+            30% { transform: translate(3px, 2px) rotate(0deg); }
+            40% { transform: translate(1px, -1px) rotate(1deg); }
+            50% { transform: translate(-1px, 2px) rotate(-1deg); }
+            60% { transform: translate(-3px, 1px) rotate(0deg); }
+            70% { transform: translate(3px, 1px) rotate(-1deg); }
+            80% { transform: translate(-1px, -1px) rotate(1deg); }
+            90% { transform: translate(1px, 2px) rotate(0deg); }
+            100% { transform: translate(1px, -2px) rotate(-1deg); }
+        }
+        .anim-shake { animation: shake 0.5s; }
+        .anim-tackle { animation: tackle 0.3s ease-in-out; }
+        @keyframes tackle {
+            0% { transform: translateX(0); }
+            50% { transform: translateX(20px); }
+            100% { transform: translateX(0); }
+        }
+        .anim-tackle-reverse { animation: tackleReverse 0.3s ease-in-out; }
+        @keyframes tackleReverse {
+            0% { transform: translateX(0); }
+            50% { transform: translateX(-20px); }
+            100% { transform: translateX(0); }
+        }
+        .cg-fade-in { animation: fadeIn 0.8s ease-in-out; }
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+    </style>
+</head>
+<body class="bg-slate-900 min-h-screen flex flex-col items-center justify-center p-4 font-serif text-slate-100">
+
+    <div class="relative w-full max-w-[420px] aspect-square bg-black rounded-lg shadow-2xl overflow-hidden border-4 border-slate-800">
+        
+        <!-- 1. 標題畫面 -->
+        <div id="scene-title" class="absolute inset-0 bg-slate-900 z-50 flex flex-col items-center justify-center p-6 text-center cursor-pointer" onclick="startIntro()">
+            <h1 class="text-5xl font-bold text-amber-500 mb-4 tracking-widest drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">李寄斬蛇</h1>
+            <h2 class="text-sm text-slate-400 mb-12 font-mono">《搜神記》卷十九</h2>
+            <div class="text-amber-600 animate-pulse text-sm font-mono mt-8">點擊畫面開始</div>
+        </div>
+
+        <!-- 2. 前導劇情畫面 -->
+        <div id="scene-intro" class="hidden absolute inset-0 bg-black z-50 flex flex-col items-center justify-center p-8 text-center cursor-pointer" onclick="nextIntro()">
+            <div id="intro-text" class="text-slate-300 leading-loose text-left w-full text-sm"></div>
+            <div class="absolute bottom-6 right-6 text-xs text-amber-500 animate-pulse font-mono">點擊繼續 ▼</div>
+        </div>
+
+        <!-- 3. 探索地圖畫面 -->
+        <div id="scene-explore" class="hidden">
+            <div id="map-header" class="absolute top-0 left-0 bg-black/80 text-amber-500 px-3 py-1 text-sm font-bold border-b border-r border-slate-700 rounded-br z-20 pointer-events-none tracking-widest"></div>
+            
+            <div id="hud-inventory" class="hidden absolute top-1 right-1 bg-black/80 text-slate-300 px-2 py-1 text-sm border border-slate-700 rounded z-20 pointer-events-none flex gap-2 items-center shadow-lg">
+                <span class="text-xs text-amber-500">裝備:</span>
+                <span id="inv-sword" class="opacity-30 grayscale transition-all duration-500 text-lg drop-shadow-md">🗡️</span>
+                <span id="inv-dog" class="opacity-30 grayscale transition-all duration-500 text-lg drop-shadow-md">🐕</span>
+                <span id="inv-bait" class="opacity-30 grayscale transition-all duration-500 text-lg drop-shadow-md">🍙</span>
+            </div>
+            
+            <div id="map-grid"></div>
+            <div id="entity-layer"></div>
+        </div>
+
+        <!-- 4. 對話框 (附帶角色立繪支援) -->
+        <div id="scene-dialogue" class="hidden absolute bottom-2 left-2 right-2 bg-slate-900/95 border-2 border-amber-600/80 p-3 rounded z-40 cursor-pointer shadow-2xl" onclick="nextDialogue()">
+            <div class="flex flex-row items-start gap-3">
+                <div class="w-16 h-16 sm:w-20 sm:h-20 shrink-0 border-2 border-slate-600 rounded bg-slate-800 overflow-hidden shadow-inner flex items-center justify-center text-4xl relative">
+                    <img id="dialogue-portrait" src="" class="hidden w-full h-full object-cover absolute inset-0">
+                    <span id="dialogue-portrait-fallback"></span>
+                </div>
+                <div class="flex-1 min-h-[4.5rem] relative pb-4">
+                    <div id="dialogue-speaker" class="font-bold text-amber-400 mb-1 text-base sm:text-lg border-b border-slate-700 pb-1 inline-block"></div>
+                    <div id="dialogue-text" class="text-sm sm:text-[15px] leading-relaxed text-slate-200"></div>
+                    <div class="absolute bottom-0 right-1 text-xs text-amber-500 animate-pulse font-mono">繼續 ▼</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 5. CG 全螢幕插圖對話框 -->
+        <div id="scene-cg" class="hidden absolute inset-0 bg-black z-50 flex flex-col cursor-pointer" onclick="nextDialogue()">
+            <!-- Fallback 色塊與大 Emoji (無圖片時顯示) -->
+            <div id="cg-fallback" class="absolute inset-0 flex flex-col items-center justify-center opacity-40 transition-colors duration-500">
+                <div id="cg-fallback-emoji" class="text-8xl mb-4 drop-shadow-lg"></div>
+                <div id="cg-fallback-text" class="text-2xl font-bold tracking-widest text-white drop-shadow-md"></div>
+            </div>
+            <!-- 實際 CG 圖片 -->
+            <img id="cg-image" src="" class="absolute inset-0 w-full h-full object-cover opacity-90 cg-fade-in hidden">
+            
+            <div class="absolute inset-0 bg-gradient-to-t from-black via-black/80 to-transparent pointer-events-none"></div>
+            <div class="absolute bottom-4 left-4 right-4 bg-black/60 border border-slate-500/50 p-4 rounded text-slate-200 backdrop-blur-sm shadow-2xl">
+                <div id="cg-speaker" class="font-bold text-amber-400 mb-2 border-b border-slate-500/50 pb-1 inline-block drop-shadow-md"></div>
+                <div id="cg-text" class="text-sm sm:text-[15px] leading-relaxed drop-shadow-md min-h-[3rem]"></div>
+                <div class="absolute bottom-2 right-3 text-xs text-amber-500 animate-pulse font-mono">點擊繼續 ▼</div>
+            </div>
+        </div>
+
+        <!-- 6. 戰鬥畫面 -->
+        <div id="scene-combat" class="hidden absolute inset-0 bg-slate-900 z-50 flex flex-col font-mono select-none">
+            <div id="combat-bg" class="relative flex-1 bg-slate-800 bg-cover bg-center overflow-hidden border-b-4 border-slate-800">
+                <div class="absolute inset-0 bg-black/30"></div> 
+                
+                <div class="absolute top-4 right-4 flex flex-col items-end z-10 w-48">
+                    <div class="w-full bg-white border-4 border-slate-600 rounded-lg p-2 shadow-md mb-2 relative">
+                        <h2 class="text-sm font-bold text-slate-800 mb-1">庸嶺大蛇 <span class="text-xs text-red-600">Lv.99</span></h2>
+                        <div class="w-full bg-slate-300 h-2 rounded-full overflow-hidden border border-slate-400">
+                            <div id="enemy-hp-bar" class="bg-green-500 h-full transition-all duration-300 w-full origin-left"></div>
+                        </div>
+                    </div>
+                    <div id="anim-wrap-enemy" class="relative w-32 h-32 flex items-center justify-center text-8xl drop-shadow-xl translate-x-4">
+                        <img id="sprite-enemy-img" src="" class="hidden w-full h-full object-contain absolute inset-0">
+                        <span id="sprite-enemy-fallback">🐍</span>
+                    </div>
+                </div>
+
+                <div class="absolute bottom-4 left-4 flex flex-col items-start z-10 w-48">
+                    <div class="flex items-end mb-2 translate-y-4 translate-x-4 relative">
+                        <div id="anim-wrap-dog" class="relative w-16 h-16 flex items-end justify-center text-5xl drop-shadow-md -scale-x-100 left-4 z-0">
+                            <img id="sprite-dog-img" src="" class="hidden w-full h-full object-contain absolute inset-0">
+                            <span id="sprite-dog-fallback">🐕</span>
+                        </div>
+                        <div id="anim-wrap-player" class="relative w-24 h-24 flex items-end justify-center text-7xl drop-shadow-xl z-10">
+                            <img id="sprite-player-img" src="" class="hidden w-full h-full object-contain absolute inset-0">
+                            <span id="sprite-player-fallback">👧</span>
+                        </div>
+                    </div>
+                    <div class="w-full bg-white border-4 border-slate-600 rounded-lg p-2 shadow-md relative z-20">
+                        <h2 class="text-sm font-bold text-slate-800 mb-1">李寄</h2>
+                        <div class="w-full bg-slate-300 h-2 rounded-full overflow-hidden border border-slate-400 mb-1">
+                            <div id="player-hp-bar" class="bg-green-500 h-full transition-all duration-300 w-full origin-left"></div>
+                        </div>
+                        <div id="player-hp-text" class="text-xs text-right text-slate-600 font-bold">100 / 100</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="h-32 bg-white relative cursor-pointer" onclick="advanceCombatDialogue()">
+                <div id="combat-msg-box" class="absolute inset-0 p-4 border-4 border-double border-slate-400 m-1 rounded bg-white flex items-center justify-start text-slate-800 text-sm sm:text-base font-bold">
+                    <span id="combat-text">大蛇出現了！</span>
+                    <div id="combat-arrow" class="absolute bottom-2 right-3 text-red-500 animate-bounce hidden">▼</div>
+                </div>
+                <div id="combat-menu" class="hidden absolute top-0 right-0 h-full w-[60%] sm:w-1/2 bg-white border-l-4 border-slate-800 p-2 z-20">
+                    <div class="grid grid-cols-2 gap-2 h-full text-slate-800 font-bold text-xs sm:text-sm">
+                        <button onclick="combatAction('attack'); event.stopPropagation();" class="border-2 border-slate-400 rounded hover:bg-slate-200 active:bg-slate-300 shadow-sm">🗡️ 越國古劍</button>
+                        <button onclick="combatAction('dog'); event.stopPropagation();" class="border-2 border-slate-400 rounded hover:bg-slate-200 active:bg-slate-300 shadow-sm">🐕 放犬咋齧</button>
+                        <button onclick="combatAction('defend'); event.stopPropagation();" class="border-2 border-slate-400 rounded hover:bg-slate-200 active:bg-slate-300 shadow-sm">🛡️ 隱蔽防禦</button>
+                        <button onclick="combatAction('flee'); event.stopPropagation();" class="border-2 border-slate-400 rounded hover:bg-slate-200 active:bg-slate-300 shadow-sm text-slate-400">逃跑</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 7. 結局畫面 -->
+        <div id="scene-end" class="hidden absolute inset-0 bg-black z-50 flex flex-col items-center justify-start pt-12 px-6 text-center overflow-y-auto">
+            <div class="text-5xl mb-4">📜</div>
+            <h1 class="text-3xl font-bold text-amber-500 mb-6 drop-shadow-md tracking-widest border-b border-amber-800 pb-4">搜神記·完</h1>
+            <div class="text-slate-300 text-sm leading-loose text-left w-full space-y-4">
+                <p>李寄成為越王后，父親亦被拜為將相。母親與姊姊們皆獲得豐厚的賞賜，李家從此脫離貧困。</p>
+                <p>從此，東冶一帶再也沒有妖邪之物作祟。</p>
+                <p>關於這位勇敢少女帶著獵犬與寶劍，挺身而出為民除害的歌謠，至今仍在東越的民間傳唱不休...</p>
+                <p class="text-center text-amber-600 pt-8 font-bold text-lg">感謝您的遊玩！</p>
+            </div>
+            <button onclick="resetToTitle()" class="mt-10 mb-8 bg-slate-800 hover:bg-slate-700 text-amber-500 py-3 px-8 rounded border border-amber-900/50 active:scale-95 transition-all tracking-widest">
+                返回卷首
+            </button>
+        </div>
+
+    </div>
+
+    <!-- 虛擬控制器 -->
+    <div id="controls" class="hidden mt-4 flex gap-6 items-center justify-center p-3 bg-slate-800/80 rounded-2xl border border-slate-700 shadow-xl max-w-sm w-full select-none backdrop-blur-sm">
+        <div class="grid grid-cols-3 gap-2">
+            <div></div>
+            <button class="bg-slate-700 hover:bg-slate-600 p-4 rounded-xl active:bg-slate-500 text-xl border-b-4 border-slate-900 active:border-b-0 active:translate-y-1 transition-all" onclick="tryMove(0, -1)">⬆️</button>
+            <div></div>
+            <button class="bg-slate-700 hover:bg-slate-600 p-4 rounded-xl active:bg-slate-500 text-xl border-b-4 border-slate-900 active:border-b-0 active:translate-y-1 transition-all" onclick="tryMove(-1, 0)">⬅️</button>
+            <button class="bg-slate-700 hover:bg-slate-600 p-4 rounded-xl active:bg-slate-500 text-xl border-b-4 border-slate-900 active:border-b-0 active:translate-y-1 transition-all" onclick="tryMove(0, 1)">⬇️</button>
+            <button class="bg-slate-700 hover:bg-slate-600 p-4 rounded-xl active:bg-slate-500 text-xl border-b-4 border-slate-900 active:border-b-0 active:translate-y-1 transition-all" onclick="tryMove(1, 0)">➡️</button>
+        </div>
+        <button class="bg-red-800 hover:bg-red-700 text-white font-bold rounded-full w-20 h-20 shadow-[0_5px_0_rgb(127,29,29)] active:shadow-none active:translate-y-[5px] transition-all border border-red-500 text-lg tracking-widest" onclick="interact()">
+            互動
+        </button>
+    </div>
+
+    <script>
+        // =====================================================================
+        // 【 圖片資源設定區 】
+        // 已自動導入你提供的所有圖片連結，即使載入失敗也會自動顯示Emoji
+        // =====================================================================
+        const CUSTOM_IMAGES = {
+            portrait_liji: "https://i.postimg.cc/SsrFnRZ0/li-ji-(xi-yue).png", portrait_parents: "https://i.postimg.cc/501W9LSY/li-dan-(fu-qin).png", portrait_official: "https://i.postimg.cc/g03PPN8x/cun-zhang.png", portrait_blacksmith: "https://i.postimg.cc/hGGb3z3r/tie-jiang.png",
+            portrait_baker: "https://i.postimg.cc/0NJrQ96y/lao-tai-tai.png", portrait_hunter: "https://i.postimg.cc/P5yQ4zKR/lie-hu.png", portrait_king: "https://i.postimg.cc/2SG7wFTx/guo-wang.png", portrait_dog: "https://i.postimg.cc/3xsdBf3M/lie-quan.png", portrait_system: "https://i.postimg.cc/SNTKfnCN/xi-tong.png",
+            combat_bg: "https://i.postimg.cc/fW7ZBVns/zhan-dou-hua-mian.png", combat_player: "https://i.postimg.cc/gcTtN3LB/li-ji-(zhan-dou).png", combat_dog: "https://i.postimg.cc/3xsdBf3M/lie-quan.png", combat_enemy: "https://i.postimg.cc/3J0S6WgQ/ju-she-(zhan-dou).png",
+            map_home_floor: "https://i.postimg.cc/6Q7t0zts/map-home-floor.png", map_home_wall: "https://i.postimg.cc/CKWY6DxC/map-home-wall.png", map_village_floor: "https://i.postimg.cc/fyvNLrjf/map-village-floor.png", map_village_wall: "https://i.postimg.cc/nr1JzPY0/map-village-wall.png",
+            map_forest_floor: "https://i.postimg.cc/8PHpPjtx/map-forest-floor.png", map_forest_wall: "https://i.postimg.cc/t44X1pMc/map-forest-wall.png", map_mountain_floor: "https://i.postimg.cc/VN31HMkq/map-mountain-floor.png", map_mountain_wall: "https://i.postimg.cc/760Dv655/map-mountain-wall.png",
+            map_cave_floor: "https://i.postimg.cc/zGGJL8Qm/map-cave-floor.png", map_cave_wall: "https://i.postimg.cc/0yy86PBF/map-cave-wall.png", map_palace_floor: "https://i.postimg.cc/vBfMRB4p/map-palace-floor.png", map_palace_wall: "https://i.postimg.cc/BbC06Vc8/map-palace-wall.png",
+            sprite_player: "https://i.postimg.cc/Xv9XDKvp/wan-jia.png", sprite_dog: "https://i.postimg.cc/3xsdBf3M/lie-quan.png", sprite_parents: "https://i.postimg.cc/0N7rHGN7/fu-qin.png", sprite_official: "https://i.postimg.cc/wjC7V4gZ/cun-zhang.png",
+            sprite_blacksmith: "https://i.postimg.cc/hGGb3z3r/tie-jiang.png", sprite_baker: "https://i.postimg.cc/0NJrQ96y/lao-tai-tai.png", sprite_hunter: "https://i.postimg.cc/P5yQ4zKR/lie-hu.png", sprite_king: "https://i.postimg.cc/2SG7wFTx/guo-wang.png",
+            sprite_skulls: "https://i.postimg.cc/g2sHDq47/ku-lou.png", sprite_cave_hole: "https://i.postimg.cc/28FQkFs2/dong-xue.png", sprite_decor_fire: "https://i.postimg.cc/zXm7XfVw/huo.png", sprite_decor_rice: "https://i.postimg.cc/Sxdfr7Vt/dao-mi.png", sprite_decor_pillar: "https://i.postimg.cc/ryHbGczs/zhu-zi.png",
+            cg_snake: "https://i.postimg.cc/KY04ypxN/zhan-sha-ju-she.png", cg_cave: "https://i.postimg.cc/W16h5bKJ/fa-xian-yi-gu.png", cg_palace: "https://i.postimg.cc/rsrpx8Wn/yue-wang-feng-hou.png"
+        };
+        // =====================================================================
+
+        const EMOJI_FALLBACK = {
+            portrait_liji: '👧', portrait_parents: '👴', portrait_official: '👲', portrait_blacksmith: '🧔',
+            portrait_baker: '🧓', portrait_hunter: '🏹', portrait_king: '🤴', portrait_dog: '🐕', portrait_system: '📜',
+            sprite_player: '👧', sprite_dog: '🐕', sprite_parents: '👴', sprite_official: '👲', sprite_blacksmith: '🧔',
+            sprite_baker: '🧓', sprite_hunter: '🏹', sprite_king: '🤴', sprite_skulls: '☠️', sprite_cave_hole: '🕳️',
+            sprite_decor_fire: '🔥', sprite_decor_rice: '🌾', sprite_decor_pillar: '🏛️',
+            combat_player: '👧', combat_dog: '🐕', combat_enemy: '🐍'
+        };
+
+        const CG_FALLBACKS = {
+            cg_snake: { color: 'bg-red-950', emoji: '🐍', text: '大蛇來襲' },
+            cg_cave:  { color: 'bg-stone-900', emoji: '☠️', text: '幽暗洞穴' },
+            cg_palace:{ color: 'bg-amber-900', emoji: '👑', text: '越王大殿' }
+        };
+
+        const SPEAKER_PORTRAIT_MAP = {
+            '李寄': 'liji', '父母': 'parents', '父親': 'parents', '母親': 'parents',
+            '官吏': 'official', '鐵匠': 'blacksmith', '米嫗': 'baker',
+            '獵戶': 'hunter', '咋蛇犬': 'dog', '越王': 'king', '系統': 'system'
+        };
+
+        const GRID_SIZE = 10;
+        const INTRO_PAGES = [
+            "<p class='mb-4 text-amber-500 font-bold text-lg border-b border-amber-800 pb-2'>前情提要</p><p class='mb-4'>東越閩中有庸嶺，高數十里。其西北隰中有大蛇，長七八丈，大十餘圍。</p><p>東冶都尉及屬城長吏，多被蛇害。甚至有都尉被其吞食。</p>",
+            "<p class='mb-4 text-amber-200/80'>官員無計可施，請巫祝占卜，云：「須得童女十二三者，啖之。大蛇方能平息。」</p><p>長吏懼大蛇肆虐，無法可管，只得屈服。</p>",
+            "<p class='mb-4'>每年八月尋童女獻祭，先後已有九名少女葬身蛇腹。</p><p>今年，又到了八月。將樂縣李家的小女兒李寄，看著家中窮困潦倒的父母，暗自做出了決定...</p>"
+        ];
+        let introIndex = 0;
+
+        const MAPS = {
+            home: {
+                name: '將樂縣．李家草堂', bg_floor: CUSTOM_IMAGES.map_home_floor, bg_wall: CUSTOM_IMAGES.map_home_wall,
+                color_floor: '#8B7355', color_wall: '#5C4033', wall_emoji: '🪑',
+                grid: [
+                    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1], [1, 0, 0, 0, 0, 0, 0, 0, 0, 1], [1, 0, 1, 1, 1, 1, 1, 0, 0, 1],
+                    [1, 0, 1, 0, 0, 0, 1, 0, 0, 1], [1, 0, 0, 0, 0, 0, 0, 0, 0, 1], [1, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+                    [1, 0, 0, 0, 0, 0, 0, 0, 0, 1], [1, 0, 0, 0, 0, 0, 0, 0, 0, 1], [1, 1, 1, 1, 2, 2, 1, 1, 1, 1], [1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+                ],
+                entities: { '4,4': { type: 'npc', id: 'parents', imgKey: 'sprite_parents' } },
+                triggers: { '4,8': { type: 'exit', target: 'village', x: 4, y: 1 }, '5,8': { type: 'exit', target: 'village', x: 5, y: 1 } }
+            },
+            village: {
+                name: '東冶屬城．市集', bg_floor: CUSTOM_IMAGES.map_village_floor, bg_wall: CUSTOM_IMAGES.map_village_wall,
+                color_floor: '#78716c', color_wall: '#44403c', wall_emoji: '🧱',
+                grid: [
+                    [1, 1, 1, 1, 2, 2, 1, 1, 1, 1], [1, 1, 0, 0, 0, 0, 0, 0, 1, 1], [1, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+                    [1, 1, 0, 0, 0, 0, 0, 0, 1, 1], [1, 0, 0, 0, 0, 0, 0, 0, 0, 1], [1, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+                    [1, 0, 1, 1, 0, 0, 1, 1, 0, 1], [1, 0, 0, 0, 0, 0, 0, 0, 0, 1], [1, 1, 1, 1, 2, 2, 1, 1, 1, 1], [1, 1, 1, 1, 1, 1, 1, 1, 1, 1]  
+                ],
+                entities: { '4,5': { type: 'npc', id: 'official', imgKey: 'sprite_official' }, '1,2': { type: 'npc', id: 'blacksmith', imgKey: 'sprite_blacksmith' }, '8,2': { type: 'npc', id: 'baker', imgKey: 'sprite_baker' } },
+                triggerSprites: { '1,1': 'sprite_decor_fire', '8,1': 'sprite_decor_rice' },
+                triggers: { '4,0': { type: 'exit', target: 'home', x: 4, y: 7 }, '5,0': { type: 'exit', target: 'home', x: 5, y: 7 }, '4,8': { type: 'exit', target: 'forest', x: 4, y: 1 }, '5,8': { type: 'exit', target: 'forest', x: 5, y: 1 } }
+            },
+            forest: {
+                name: '城外林地', bg_floor: CUSTOM_IMAGES.map_forest_floor, bg_wall: CUSTOM_IMAGES.map_forest_wall,
+                color_floor: '#14532d', color_wall: '#064e3b', wall_emoji: '🌲',
+                grid: [
+                    [1, 1, 1, 1, 2, 2, 1, 1, 1, 1], [1, 0, 1, 1, 0, 0, 1, 1, 0, 1], [1, 0, 0, 0, 0, 0, 0, 1, 1, 1],
+                    [1, 1, 0, 1, 1, 0, 0, 0, 0, 1], [1, 1, 0, 0, 0, 0, 1, 1, 0, 1], [1, 0, 0, 1, 1, 0, 0, 1, 0, 1], 
+                    [1, 0, 1, 1, 1, 1, 0, 0, 0, 1], [1, 0, 0, 0, 0, 0, 0, 1, 0, 1], [1, 1, 1, 1, 2, 2, 1, 1, 1, 1], [1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+                ],
+                entities: { '5,4': { type: 'npc', id: 'hunter', imgKey: 'sprite_hunter' } },
+                getDynamicTriggerSprites: () => { return (!inventory.dog) ? { '6,4': 'sprite_dog' } : {}; },
+                triggers: { '4,0': { type: 'exit', target: 'village', x: 4, y: 7 }, '5,0': { type: 'exit', target: 'village', x: 5, y: 7 }, '4,8': { type: 'exit', target: 'mountain', x: 4, y: 1 }, '5,8': { type: 'exit', target: 'mountain', x: 5, y: 1 } }
+            },
+            mountain: {
+                name: '庸嶺大山', bg_floor: CUSTOM_IMAGES.map_mountain_floor, bg_wall: CUSTOM_IMAGES.map_mountain_wall,
+                color_floor: '#334155', color_wall: '#0f172a', wall_emoji: '🪨',
+                grid: [
+                    [1, 1, 1, 1, 2, 2, 1, 1, 1, 1], [1, 0, 0, 0, 0, 0, 0, 0, 0, 1], [1, 0, 1, 1, 0, 0, 1, 1, 0, 1],
+                    [1, 0, 1, 0, 0, 0, 0, 1, 0, 1], [1, 0, 0, 0, 1, 1, 0, 0, 0, 1], [1, 1, 0, 0, 1, 3, 0, 0, 1, 1],
+                    [1, 0, 0, 0, 0, 0, 0, 0, 0, 1], [1, 0, 1, 1, 0, 0, 1, 1, 0, 1], [1, 0, 0, 0, 0, 0, 0, 0, 0, 1], [1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+                ],
+                entities: {},
+                getDynamicTriggerSprites: () => { return { '5,5': 'sprite_cave_hole' }; },
+                triggers: { '4,0': { type: 'exit', target: 'forest', x: 4, y: 7 }, '5,0': { type: 'exit', target: 'forest', x: 5, y: 7 }, '5,5': { type: 'event', id: 'snake_cave' } }
+            },
+            cave: {
+                name: '陰暗洞穴', bg_floor: CUSTOM_IMAGES.map_cave_floor, bg_wall: CUSTOM_IMAGES.map_cave_wall,
+                color_floor: '#1c1917', color_wall: '#0c0a09', wall_emoji: '壁',
+                grid: [
+                    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1], [1, 0, 0, 1, 3, 3, 1, 0, 0, 1], [1, 0, 0, 1, 0, 0, 1, 0, 0, 1],
+                    [1, 0, 0, 0, 0, 0, 0, 0, 0, 1], [1, 1, 0, 0, 0, 0, 0, 0, 1, 1], [1, 1, 1, 0, 0, 0, 0, 1, 1, 1], 
+                    [1, 0, 0, 0, 0, 0, 0, 0, 0, 1], [1, 0, 0, 0, 0, 0, 0, 0, 0, 1], [1, 1, 1, 1, 2, 2, 1, 1, 1, 1], [1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+                ],
+                entities: {},
+                triggerSprites: { '4,1': 'sprite_skulls', '5,1': 'sprite_skulls' }, 
+                triggers: { '4,8': { type: 'exit', target: 'mountain', x: 5, y: 6 }, '5,8': { type: 'exit', target: 'mountain', x: 5, y: 6 }, '4,1': { type: 'event', id: 'skulls' }, '5,1': { type: 'event', id: 'skulls' } }
+            },
+            palace: {
+                name: '東越．越王宮殿', bg_floor: CUSTOM_IMAGES.map_palace_floor, bg_wall: CUSTOM_IMAGES.map_palace_wall,
+                color_floor: '#991b1b', color_wall: '#b45309', wall_emoji: '金',
+                grid: [
+                    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 0, 0, 1, 1, 1, 1],
+                    [1, 0, 0, 0, 0, 0, 0, 0, 0, 1], [1, 0, 0, 0, 0, 0, 0, 0, 0, 1], [1, 0, 1, 0, 0, 0, 0, 1, 0, 1],
+                    [1, 0, 0, 0, 0, 0, 0, 0, 0, 1], [1, 0, 1, 0, 0, 0, 0, 1, 0, 1], [1, 0, 0, 0, 0, 0, 0, 0, 0, 1], [1, 1, 1, 1, 1, 1, 1, 1, 1, 1]  
+                ],
+                entities: { '4,2': { type: 'npc', id: 'king', imgKey: 'sprite_king' }, '5,2': { type: 'npc', id: 'king', imgKey: 'sprite_king' }, '3,5': { type: 'npc', id: 'father_rich', imgKey: 'sprite_parents' }, '6,5': { type: 'npc', id: 'mother_rich', imgKey: 'sprite_parents' } },
+                triggerSprites: { '2,5': 'sprite_decor_pillar', '7,5': 'sprite_decor_pillar', '2,7': 'sprite_decor_pillar', '7,7': 'sprite_decor_pillar' },
+                triggers: {}
+            }
+        };
+
+        const DIALOGUES = {
+            parents_0: [
+                { s: '李寄', t: '父親，母親。我們家生了六個女兒，卻沒有一個男丁。家裡窮得連飯都吃不上了。' },
+                { s: '李寄', t: '女兒無漢代緹縈救父之功，留在家裡也只是徒費衣食，活著沒有益處，不如早點死去。' },
+                { s: '李寄', t: '如今官府四處招募祭蛇的童女。若是賣掉女兒之身，還能得到一筆錢來供養二老，豈不甚好？' },
+                { s: '父母', t: '（痛哭流涕）寄兒！妳在說什麼傻話！那庸嶺大蛇為禍多年，連長吏都無可奈何，妳去就是送死啊！' },
+                { s: '系統', t: '父母堅決不允。李寄不忍心看著家人挨餓受苦，決定趁父母不注意時，悄悄出門向官吏應募。', e: 'leave_home' }
+            ],
+            official_0: [
+                { s: '官吏', t: '唉！大蛇屢屢下山，長吏死傷慘重。官府無計可施，只能聽從巫祝之言，獻祭童女保一方平安。' },
+                { s: '李寄', t: '將樂縣李寄，願應募祭蛇。但請大人賜我好劍、咋蛇犬與餈粢蜜麨。' },
+                { s: '官吏', t: '妳這女童看著才十二三歲，當真要去？那大蛇長七八丈，大十餘圍，妳去無異於送死啊！' },
+                { s: '李寄', t: '妾意已決，不可更改。若大人不允，李寄便空手前往庸嶺。' },
+                { s: '官吏', t: '這... 好一個烈女！妳若真心前去：城內的【鐵匠】有百煉好劍，【米嫗】能做餈粢。' },
+                { s: '官吏', t: '咋蛇犬得去城南外頭的【林地】尋找獵戶借用。找齊後再來見我。' },
+                { s: '系統', t: '開始任務：收集【越國古劍】、【咋蛇犬】與【餈粢蜜麨】。現在可以前往城外林地了。', e: 'start_quest' }
+            ],
+            official_waiting: [ { s: '官吏', t: '妳的東西還沒準備齊全呢。鐵匠、米嫗都在市集裡，獵戶則在城南林地。' } ],
+            official_complete: [
+                { s: '官吏', t: '好劍！好犬！沒想到妳一個弱女子，真的能找齊這些東西。' },
+                { s: '官吏', t: '既然妳去意已決... 穿過南邊的林地，便是庸嶺大山。萬事小心！' },
+                { s: '系統', t: '獲得許可。現在可以穿過城外林地，前往【庸嶺大山】了。', e: 'unlock_mountain' }
+            ],
+            blacksmith_0: [
+                { s: '鐵匠', t: '小姑娘，兵器鋪火氣大，可不是妳該來的地方。什麼？妳要去斬庸嶺那妖物？' },
+                { s: '鐵匠', t: '罷了！若妳真有此報國救民的決心，我這把祖傳的【越國古劍】，削鐵如泥，便贈與妳！' },
+                { s: '系統', t: '獲得了【越國古劍】。攻擊力大幅提升。', e: 'get_sword' }
+            ],
+            blacksmith_1: [ { s: '鐵匠', t: '好生使用那把越國古劍，連玄鐵都能斬斷，一定要活著回來啊！' } ],
+            baker_0: [
+                { s: '米嫗', t: '作孽啊，官府無能，年年都要送女孩去給蛇吃。難道今年輪到妳了？' },
+                { s: '米嫗', t: '這是我連夜搗的【餈粢蜜麨】，那妖物最愛這香甜味了，希望能幫妳爭取一點時間。拿去吧。' },
+                { s: '系統', t: '獲得了誘餌【餈粢蜜麨】。', e: 'get_bait' }
+            ],
+            baker_1: [ { s: '米嫗', t: '菩薩保佑妳... 千萬要平安歸來啊。' } ],
+            hunter_0: [
+                { s: '咋蛇犬', t: '汪！汪！汪！（露出獠牙狂吠）' },
+                { s: '獵戶', t: '走開走開，我這狗兇得很，專咬毒蛇猛獸，別被咬傷了。什麼？妳要上庸嶺斬蛇？' },
+                { s: '獵戶', t: '既然妳有這等膽識，這【咋蛇犬】就借給妳，或許能保妳個全屍。' },
+                { s: '系統', t: '咋蛇犬感應到了妳視死如歸的決心，奇蹟般地變得十分溫順。獲得了【咋蛇犬】。', e: 'get_dog' }
+            ],
+            hunter_1: [ { s: '獵戶', t: '這林子再往南走就是庸嶺了。那狗只認勇者為主，好好待牠。' } ],
+            
+            cave_0: [
+                { s: '李寄', t: '這裡就是大蛇的巢穴了。周圍陰風陣陣，腥臭無比，令人作嘔。' },
+                { s: '李寄', t: '趁著八月朝，先把【餈粢蜜麨】放置在洞口，引那妖物出來。' },
+                { s: '系統', t: '李寄將香甜的蜜麨置於洞口，隨後拔出越國古劍，牽著咋蛇犬，隱蔽在洞外的廟柱後。', cg: 'cg_snake' },
+                { s: '系統', t: '一陣狂風颳起，頭大如囷、目如二尺鏡的庸嶺大蛇，被香氣吸引，貪婪地爬向了祭品！', cg: 'cg_snake', e: 'place_bait' }
+            ],
+            snake_dead: [
+                { s: '系統', t: '大蛇發出淒厲的嘶吼，最終翻滾至庭院前，徹底氣絕身亡。' },
+                { s: '系統', t: '堵在洞口的巨大蛇身化為一灘腥血。一陣陰冷的風從深邃的洞穴中吹出...' },
+                { s: '李寄', t: '妖物已除。我要進入洞穴深處，看看那些被抓走的女孩們，是否還有生還的可能。' },
+                { s: '系統', t: '庸嶺蛇穴已解鎖。請進入洞穴進行調查。', e: 'open_cave' }
+            ],
+            skulls_found: [
+                { s: '系統', t: '李寄在幽暗潮濕的洞穴深處，沒有發現任何生還者，只看到了滿地的白骨。', cg: 'cg_cave' },
+                { s: '李寄', t: '這就是那九名無辜女孩的遺骸嗎... 沒想到還是晚了一步。', cg: 'cg_cave' },
+                { s: '系統', t: '李寄強忍悲痛，將女孩們的骸骨一一搬出洞外，妥善安葬。', cg: 'cg_cave' },
+                { s: '李寄', t: '「汝曹怯弱，為蛇所食，甚可哀愍！」\n（妳們就是太過怯弱，不敢反抗，才會被這妖蛇吃掉，真是可憐啊！）', cg: 'cg_cave' },
+                { s: '系統', t: '越王聽聞了這位少女的英勇事蹟，立刻派出使臣，將李寄及其父母迎入東越王宮...', cg: 'cg_cave', e: 'go_palace' }
+            ],
+            king_reward: [
+                { s: '越王', t: '（大笑）好！好一個李寄！孤聽聞將樂縣有奇女，膽識過人，單槍匹馬為東冶除去了數十年的蛇患！', cg: 'cg_palace' },
+                { s: '越王', t: '那庸嶺大蛇連孤的將軍們都束手無策，沒想到竟被妳一個十二三歲的少女給斬了！', cg: 'cg_palace' },
+                { s: '越王', t: '孤決定，正式聘李寄妳為越國王后！', cg: 'cg_palace' },
+                { s: '越王', t: '並拜妳的父親為將相，賜妳母親與姊姊們豐厚賞賜！讓全天下都知道，勇敢之人必得厚報！', cg: 'cg_palace' },
+                { s: '李寄', t: '謝大王隆恩。願東越從此太平，再無妖患。', cg: 'cg_palace', e: 'end_game' }
+            ],
+            parents_rich: [
+                { s: '父親', t: '寄兒... 為父慚愧啊！當初不該攔著妳。多虧了妳的勇敢，我們李家才能有今日的榮華富貴！' },
+                { s: '母親', t: '寄兒，大王賞賜了我們好多東西，姊姊們也都許配了好人家。我們再也不用挨餓了！' }
+            ]
+        };
+
+        let gameState = 'TITLE'; 
+        let currentMap = 'home';
+        
+        let player = { x: 4, y: 7, facing: 'UP' };
+        let prevPlayerState = { x: 4, y: 7, facing: 'UP' }; 
+        let isMoving = false;
+
+        let progress = 0; 
+        let inventory = { sword: false, dog: false, bait: false };
+        let currentDialogues = [];
+        let dialogueIndex = 0;
+
+        let combatState = {
+            msgQueue: [], isProcessing: false,
+            playerHp: 100, maxHp: 100,
+            enemyHp: 200, enemyMaxHp: 200,
+            isPlayerDefending: false
+        };
+
+        // ==================== 【全局變量：保存玩家和狗的元素引用】 ====================
+        let playerElement = null;
+        let dogElement = null;
+
+        const show = (id) => document.getElementById(id).classList.remove('hidden');
+        const hide = (id) => document.getElementById(id).classList.add('hidden');
+        const setScene = (scene) => {
+            gameState = scene;
+            hide('scene-title'); hide('scene-intro'); hide('scene-explore'); hide('scene-dialogue'); hide('scene-combat'); hide('scene-end'); hide('controls'); hide('hud-inventory'); hide('scene-cg');
+            
+            if (scene === 'TITLE') show('scene-title');
+            if (scene === 'INTRO') show('scene-intro');
+            if (scene === 'EXPLORE') { show('scene-explore'); show('controls'); if(progress >= 1 && progress < 5) show('hud-inventory'); }
+            if (scene === 'DIALOGUE') { show('scene-explore'); show('scene-dialogue'); show('controls'); if(progress >= 1 && progress < 5) show('hud-inventory'); }
+            if (scene === 'CG') show('scene-cg');
+            if (scene === 'COMBAT') show('scene-combat');
+            if (scene === 'END') show('scene-end');
+        };
+
+        function startIntro() {
+            introIndex = 0;
+            document.getElementById('intro-text').innerHTML = INTRO_PAGES[introIndex];
+            setScene('INTRO');
+        }
+
+        function nextIntro() {
+            introIndex++;
+            if (introIndex < INTRO_PAGES.length) {
+                document.getElementById('intro-text').innerHTML = INTRO_PAGES[introIndex];
+            } else {
+                startGame();
+            }
+        }
+
+        function startGame() {
+            progress = 0;
+            inventory = { sword: false, dog: false, bait: false };
+            
+            if (CUSTOM_IMAGES.combat_bg && CUSTOM_IMAGES.combat_bg.trim() !== '') {
+                document.getElementById('combat-bg').style.backgroundImage = `url('${CUSTOM_IMAGES.combat_bg}')`;
+            } else {
+                document.getElementById('combat-bg').style.backgroundImage = '';
+            }
+            
+            const setCombatSprite = (id, imgUrl, fallbackText) => {
+                const imgEl = document.getElementById(id + '-img');
+                const textEl = document.getElementById(id + '-fallback');
+                if (imgUrl && imgUrl.trim() !== '') {
+                    imgEl.src = imgUrl; 
+                    imgEl.classList.remove('hidden'); 
+                    textEl.classList.add('hidden');
+                    // ★ 容錯機制：若戰鬥圖片死連結，自動切換 Emoji
+                    imgEl.onerror = function() {
+                        this.classList.add('hidden');
+                        textEl.classList.remove('hidden');
+                        textEl.innerText = fallbackText;
+                    };
+                } else {
+                    imgEl.classList.add('hidden'); 
+                    textEl.classList.remove('hidden'); 
+                    textEl.innerText = fallbackText;
+                }
+            };
+            setCombatSprite('sprite-enemy', CUSTOM_IMAGES.combat_enemy, EMOJI_FALLBACK.combat_enemy);
+            setCombatSprite('sprite-player', CUSTOM_IMAGES.combat_player, EMOJI_FALLBACK.combat_player);
+            setCombatSprite('sprite-dog', CUSTOM_IMAGES.combat_dog, EMOJI_FALLBACK.combat_dog);
+
+            updateInventoryUI();
+            currentMap = 'home';
+            player = { x: 4, y: 7, facing: 'UP' };
+            prevPlayerState = { ...player };
+            setScene('EXPLORE');
+            
+            // ★ 強制延遲渲染，確保DOM完全加載
+            setTimeout(() => {
+                renderMap();
+            }, 100);
+        }
+
+        function resetToTitle() { setScene('TITLE'); }
+
+        function updateInventoryUI() {
+            const getIcon = (id, has) => {
+                const el = document.getElementById(id);
+                if (has) {
+                    el.classList.remove('opacity-30', 'grayscale');
+                    el.classList.add('opacity-100', 'drop-shadow-[0_0_8px_rgba(251,191,36,0.8)]', 'scale-110');
+                }
+            };
+            getIcon('inv-sword', inventory.sword);
+            getIcon('inv-dog', inventory.dog);
+            getIcon('inv-bait', inventory.bait);
+        }
+
+        // ==================== 【渲染整個地圖（只在切換地圖時調用）】 ====================
+        function renderMap() {
+            const mapData = MAPS[currentMap];
+            document.getElementById('map-header').innerText = mapData.name;
+            const grid = document.getElementById('map-grid');
+            const entityLayer = document.getElementById('entity-layer');
+            
+            // 強制清空
+            grid.innerHTML = '';
+            entityLayer.innerHTML = '';
+            
+            // 重置元素引用
+            playerElement = null;
+            dogElement = null;
+
+            const dynamicSprites = mapData.getDynamicTriggerSprites ? mapData.getDynamicTriggerSprites() : {};
+            const triggerSprites = { ...(mapData.triggerSprites || {}), ...dynamicSprites };
+
+            // 渲染網格
+            for (let y = 0; y < GRID_SIZE; y++) {
+                for (let x = 0; x < GRID_SIZE; x++) {
+                    const cell = document.createElement('div');
+                    const isWall = mapData.grid[y][x] === 1;
+                    const isDoor = mapData.grid[y][x] === 2;
+
+                    let bgImg = isWall ? mapData.bg_wall : mapData.bg_floor;
+                    let bgColor = isWall ? mapData.color_wall : mapData.color_floor;
+                    
+                    // ★ 強制設置樣式，不依賴Tailwind
+                    cell.style.position = 'relative';
+                    cell.style.display = 'flex';
+                    cell.style.alignItems = 'center';
+                    cell.style.justifyContent = 'center';
+                    cell.style.overflow = 'hidden';
+                    cell.style.border = '1px solid rgba(0,0,0,0.1)';
+                    cell.style.backgroundColor = bgColor;
+                    
+                    if (bgImg && bgImg.trim() !== '') {
+                        cell.style.backgroundImage = `url('${bgImg}')`;
+                        cell.style.backgroundSize = 'cover';
+                        cell.style.backgroundPosition = 'center';
+                        cell.style.backgroundRepeat = 'no-repeat';
+                    } else {
+                        if (isWall && mapData.wall_emoji) {
+                            cell.innerHTML = `<div style="font-size: 1.25rem; opacity: 0.6;">${mapData.wall_emoji}</div>`;
+                        }
+                    }
+                    
+                    if (isDoor) {
+                        const overlay = document.createElement('div');
+                        overlay.style.position = 'absolute';
+                        overlay.style.inset = '0';
+                        overlay.style.backgroundColor = 'rgba(0,0,0,0.6)';
+                        overlay.style.pointerEvents = 'none';
+                        cell.appendChild(overlay);
+                    }
+                    
+                    grid.appendChild(cell);
+                }
+            }
+
+            // 渲染所有靜態實體（NPC/裝飾）
+            for (let y = 0; y < GRID_SIZE; y++) {
+                for (let x = 0; x < GRID_SIZE; x++) {
+                    const entity = mapData.entities[`${x},${y}`];
+                    const tsKey = triggerSprites[`${x},${y}`];
+                    if (entity) {
+                        createEntity(entityLayer, x, y, CUSTOM_IMAGES[entity.imgKey], EMOJI_FALLBACK[entity.imgKey], 'drop-shadow-md', false);
+                    } else if (tsKey) {
+                        createEntity(entityLayer, x, y, CUSTOM_IMAGES[tsKey], EMOJI_FALLBACK[tsKey], 'drop-shadow-[0_0_8px_rgba(0,0,0,1)] scale-75', false);
+                    }
+                }
+            }
+
+            // 渲染玩家和狗（初始加載時）
+            createPlayerAndDog();
+        }
+
+        // ==================== 【創建玩家和狗元素（只在切換地圖時調用）】 ====================
+        function createPlayerAndDog() {
+            const entityLayer = document.getElementById('entity-layer');
+            
+            // 渲染狗
+            if (inventory.dog && progress < 5) { 
+                let transform = prevPlayerState.facing === 'LEFT' ? 'scaleX(-1)' : '';
+                dogElement = createEntity(entityLayer, prevPlayerState.x, prevPlayerState.y, CUSTOM_IMAGES.sprite_dog, EMOJI_FALLBACK.sprite_dog, 'drop-shadow-md scale-75', true, transform);
+                dogElement.classList.add('dog-entity');
+            }
+
+            // 渲染玩家
+            let playerTransform = player.facing === 'LEFT' ? 'scaleX(-1)' : '';
+            playerElement = createEntity(entityLayer, player.x, player.y, CUSTOM_IMAGES.sprite_player, EMOJI_FALLBACK.sprite_player, 'drop-shadow-md z-10', true, playerTransform);
+            playerElement.classList.add('player-entity');
+        }
+
+        function createEntity(container, x, y, imgUrl, fallbackText, extraClass, isAnimated, transform = '') {
+            const hasImage = imgUrl && imgUrl.trim() !== '';
+            const el = document.createElement(hasImage ? 'img' : 'div');
+            
+            // ★ 強制設置位置和大小
+            el.style.position = 'absolute';
+            el.style.left = `${x * 10}%`;
+            el.style.top = `${y * 10}%`;
+            el.style.width = '10%';
+            el.style.height = '10%';
+            el.style.pointerEvents = 'none';
+            
+            if (hasImage) {
+                el.src = imgUrl;
+                el.style.objectFit = 'contain';
+                el.style.transform = transform;
+                if (isAnimated) el.classList.add('grid-entity');
+                // ★ 容錯機制：地圖角色圖片失效時轉為 Emoji
+                el.onerror = function() {
+                    this.outerHTML = `<div class="${extraClass} grid-entity" style="position:absolute; left:${this.style.left}; top:${this.style.top}; width:10%; height:10%; display:flex; align-items:center; justify-content:center; font-size:1.875rem; pointer-events:none; transform:${transform}"><div style="transform: ${transform}">${fallbackText}</div></div>`;
+                };
+            } else {
+                el.innerHTML = `<div style="transform: ${transform}">${fallbackText}</div>`;
+                el.style.display = 'flex';
+                el.style.alignItems = 'center';
+                el.style.justifyContent = 'center';
+                el.style.fontSize = '1.875rem';
+                if (isAnimated) el.classList.add('grid-entity');
+            }
+            
+            // 添加額外的class
+            if (extraClass) {
+                el.className = extraClass;
+            }
+            
+            container.appendChild(el);
+            return el;
+        }
+
+        // ==================== 【核心：只更新位置，不刪除重建元素】 ====================
+        function updatePlayerAndDogPosition() {
+            // 更新玩家位置和朝向
+            if (playerElement) {
+                playerElement.style.left = `${player.x * 10}%`;
+                playerElement.style.top = `${player.y * 10}%`;
+                let playerTransform = player.facing === 'LEFT' ? 'scaleX(-1)' : '';
+                playerElement.style.transform = playerTransform;
+            }
+            
+            // 更新狗的位置和朝向
+            if (dogElement && inventory.dog && progress < 5) {
+                dogElement.style.left = `${prevPlayerState.x * 10}%`;
+                dogElement.style.top = `${prevPlayerState.y * 10}%`;
+                let dogTransform = prevPlayerState.facing === 'LEFT' ? 'scaleX(-1)' : '';
+                dogElement.style.transform = dogTransform;
+            }
+        }
+
+        // ==================== 【優化：移動時只更新位置，不重新渲染任何東西】 ====================
+        function tryMove(dx, dy) {
+            if (gameState !== 'EXPLORE' || isMoving) return;
+
+            let newFacing = player.facing;
+            if (dx > 0) newFacing = 'RIGHT';
+            if (dx < 0) newFacing = 'LEFT';
+            if (dy > 0) newFacing = 'DOWN';
+            if (dy < 0) newFacing = 'UP';
+
+            // 只改變朝向，不移動
+            if (player.facing !== newFacing && dx === 0 && dy === 0) {
+                 player.facing = newFacing;
+                 updatePlayerAndDogPosition(); // 只更新朝向
+                 return;
+            }
+            player.facing = newFacing;
+
+            let newX = player.x + dx;
+            let newY = player.y + dy;
+            const mapData = MAPS[currentMap];
+
+            // 邊界檢查
+            if (newX < 0 || newX >= GRID_SIZE || newY < 0 || newY >= GRID_SIZE) { 
+                updatePlayerAndDogPosition(); 
+                return; 
+            }
+            // 牆壁和NPC檢查
+            if (mapData.grid[newY][newX] === 1 || mapData.entities[`${newX},${newY}`]) { 
+                updatePlayerAndDogPosition(); 
+                return; 
+            }
+
+            // 觸發器檢查
+            const trigger = mapData.triggers[`${newX},${newY}`];
+            if (trigger) {
+                if (trigger.type === 'exit') {
+                    if (currentMap === 'home' && progress < 1) { 
+                        startDialogue([{ s: '系統', t: '尚未辭行，不能離開。' }]); 
+                        return; 
+                    }
+                    if (currentMap === 'village' && trigger.target === 'forest' && progress < 2) { 
+                        startDialogue([{ s: '系統', t: '野獸出沒，無許可不得出城。' }]); 
+                        return; 
+                    }
+                    if (currentMap === 'forest' && trigger.target === 'mountain' && progress < 3) { 
+                        startDialogue([{ s: '系統', t: '裝備未齊且未覆命，不可進山。' }]); 
+                        return; 
+                    }
+                    
+                    // 切換地圖時才重新渲染整個地圖
+                    currentMap = trigger.target;
+                    player.x = trigger.x;
+                    player.y = trigger.y;
+                    prevPlayerState = { ...player }; 
+                    renderMap();
+                    return;
+                } else if (trigger.type === 'event' && trigger.id === 'snake_cave') {
+                    if (progress === 3) startDialogue(DIALOGUES.cave_0);
+                    else if (progress === 4) {
+                        currentMap = 'cave';
+                        player.x = 4; player.y = 8;
+                        prevPlayerState = { ...player }; 
+                        renderMap();
+                    }
+                    return;
+                } else if (trigger.type === 'event' && trigger.id === 'skulls') {
+                    if (progress === 4) startDialogue(DIALOGUES.skulls_found);
+                    return;
+                }
+            }
+            
+            // 正常移動
+            isMoving = true;
+            prevPlayerState = { x: player.x, y: player.y, facing: player.facing };
+            player.x = newX;
+            player.y = newY;
+            
+            // ★ 關鍵：只更新CSS屬性，不刪除重建任何元素
+            updatePlayerAndDogPosition();
+            
+            setTimeout(() => { isMoving = false; }, 150); 
+        }
+
+        function interact() {
+            if (gameState === 'DIALOGUE' || gameState === 'CG') { nextDialogue(); return; }
+            if (gameState !== 'EXPLORE') return;
+
+            let tx = player.x, ty = player.y;
+            if (player.facing === 'UP') ty--;
+            if (player.facing === 'DOWN') ty++;
+            if (player.facing === 'LEFT') tx--;
+            if (player.facing === 'RIGHT') tx++;
+
+            const mapData = MAPS[currentMap];
+            const entity = mapData.entities[`${tx},${ty}`];
+
+            if (entity && entity.type === 'npc') {
+                if (entity.id === 'parents') {
+                    startDialogue(progress === 0 ? DIALOGUES.parents_0 : [{ s: '父母', t: '寄兒啊... 神明保佑妳平安歸來...' }]);
+                } else if (entity.id === 'official') {
+                    if (progress === 1) startDialogue(DIALOGUES.official_0);
+                    else if (progress === 2) {
+                        if (inventory.sword && inventory.dog && inventory.bait) startDialogue(DIALOGUES.official_complete);
+                        else startDialogue(DIALOGUES.official_waiting);
+                    } else if (progress >= 3) { startDialogue([{ s: '官吏', t: '庸嶺就在城南林地後方，快去吧！' }]); }
+                } else if (entity.id === 'blacksmith') {
+                    if (progress < 1) startDialogue([{ s: '鐵匠', t: '小娃兒別靠近火爐，危險！' }]);
+                    else if (!inventory.sword) startDialogue(DIALOGUES.blacksmith_0);
+                    else startDialogue(DIALOGUES.blacksmith_1);
+                } else if (entity.id === 'baker') {
+                    if (progress < 1) startDialogue([{ s: '米嫗', t: '這新米可香了...' }]);
+                    else if (!inventory.bait) startDialogue(DIALOGUES.baker_0);
+                    else startDialogue(DIALOGUES.baker_1);
+                } else if (entity.id === 'hunter') {
+                    if (progress < 2) startDialogue([{ s: '獵戶', t: '汪汪！別靠近我的狗！' }]);
+                    else if (!inventory.dog) startDialogue(DIALOGUES.hunter_0);
+                    else startDialogue(DIALOGUES.hunter_1);
+                } else if (entity.id === 'king') {
+                    if (progress === 5) startDialogue(DIALOGUES.king_reward);
+                } else if (entity.id === 'father_rich' || entity.id === 'mother_rich') {
+                    startDialogue(DIALOGUES.parents_rich);
+                }
+            } else {
+                const trigger = mapData.triggers[`${tx},${ty}`];
+                if (trigger && trigger.type === 'event' && trigger.id === 'snake_cave') {
+                    if (progress === 3) startDialogue(DIALOGUES.cave_0);
+                } else if (trigger && trigger.type === 'event' && trigger.id === 'skulls') {
+                    if (progress === 4) startDialogue(DIALOGUES.skulls_found);
+                }
+            }
+        }
+
+        // --- 對話與 CG 系統 ---
+        function startDialogue(dialogueArray) {
+            currentDialogues = dialogueArray;
+            dialogueIndex = 0;
+            updateDialogueUI();
+        }
+
+        // ==================== 【修復對話框立繪顯示】 ====================
+        function updateDialogueUI() {
+            const d = currentDialogues[dialogueIndex];
+            
+            if (d.cg) {
+                setScene('CG');
+                const cgImg = document.getElementById('cg-image');
+                const cgFallback = document.getElementById('cg-fallback');
+                const cgUrl = CUSTOM_IMAGES[d.cg];
+                
+                const showFallback = () => {
+                    cgImg.classList.add('hidden');
+                    cgFallback.classList.remove('hidden');
+                    const fb = CG_FALLBACKS[d.cg];
+                    cgFallback.className = `absolute inset-0 flex flex-col items-center justify-center opacity-40 transition-colors duration-500 ${fb.color}`;
+                    document.getElementById('cg-fallback-emoji').innerText = fb.emoji;
+                    document.getElementById('cg-fallback-text').innerText = fb.text;
+                };
+
+                if (cgUrl && cgUrl.trim() !== '') {
+                    cgImg.src = cgUrl;
+                    cgImg.classList.remove('hidden');
+                    cgFallback.classList.add('hidden');
+                    cgImg.classList.remove('cg-fade-in');
+                    void cgImg.offsetWidth; 
+                    cgImg.classList.add('cg-fade-in');
+                    // ★ 容錯機制：CG圖失效時轉為意境色塊
+                    cgImg.onerror = showFallback;
+                } else {
+                    showFallback();
+                }
+
+                document.getElementById('cg-speaker').innerText = d.s;
+                document.getElementById('cg-text').innerHTML = d.t.replace(/\n/g, '<br/>');
+            } else {
+                setScene('DIALOGUE');
+                document.getElementById('dialogue-speaker').innerText = d.s;
+                document.getElementById('dialogue-text').innerHTML = d.t.replace(/\n/g, '<br/>');
+
+                const portraitImg = document.getElementById('dialogue-portrait');
+                const portraitFallback = document.getElementById('dialogue-portrait-fallback');
+                const speakerId = SPEAKER_PORTRAIT_MAP[d.s] || 'system';
+                const imgUrl = CUSTOM_IMAGES[`portrait_${speakerId}`];
+                
+                // 先隱藏兩個元素
+                portraitImg.classList.add('hidden');
+                portraitFallback.classList.add('hidden');
+                
+                const showPortraitFallback = () => {
+                    portraitImg.classList.add('hidden');
+                    portraitFallback.classList.remove('hidden');
+                    portraitFallback.innerText = EMOJI_FALLBACK[`portrait_${speakerId}`] || EMOJI_FALLBACK.portrait_system;
+                };
+
+                if (imgUrl && imgUrl.trim() !== '') {
+                    portraitImg.src = imgUrl;
+                    portraitImg.classList.remove('hidden');
+                    // ★ 強制顯示圖片
+                    portraitImg.style.display = 'block !important';
+                    // ★ 容錯機制：立繪圖片失效時轉為 Emoji
+                    portraitImg.onerror = showPortraitFallback;
+                } else {
+                    showPortraitFallback();
+                }
+            }
+        }
+
+        function nextDialogue() {
+            if (dialogueIndex < currentDialogues.length - 1) {
+                dialogueIndex++;
+                updateDialogueUI();
+            } else {
+                const eventName = currentDialogues[dialogueIndex].e;
+                setScene('EXPLORE'); 
+                handleEvent(eventName);
+            }
+        }
+
+        function handleEvent(eventName) {
+            if (!eventName) return;
+            if (eventName === 'leave_home') progress = 1;
+            if (eventName === 'start_quest') progress = 2; 
+            if (eventName === 'get_sword') { inventory.sword = true; updateInventoryUI(); checkAllItems(); }
+            if (eventName === 'get_dog') { 
+                inventory.dog = true; updateInventoryUI(); 
+                prevPlayerState = { ...player };
+                // 獲得狗時重新創建元素
+                createPlayerAndDog();
+                checkAllItems(); 
+            }
+            if (eventName === 'get_bait') { inventory.bait = true; updateInventoryUI(); checkAllItems(); }
+            if (eventName === 'unlock_mountain') progress = 3;
+            if (eventName === 'open_cave') { 
+                progress = 4; 
+                renderMap(); // 切換地圖時重新渲染
+            } 
+            if (eventName === 'go_palace') { 
+                progress = 5; 
+                currentMap = 'palace';
+                player.x = 4; player.y = 8; player.facing = 'UP';
+                prevPlayerState = { ...player };
+                renderMap(); // 切換地圖時重新渲染
+                setScene('EXPLORE'); 
+            }
+            if (eventName === 'end_game') setScene('END');
+            if (eventName === 'place_bait') startCombat();
+        }
+
+        function checkAllItems() {
+            if (inventory.sword && inventory.dog && inventory.bait && progress === 2) {
+                setTimeout(() => { startDialogue([{ s: '系統', t: '裝備與祭品皆已齊全，請向官吏覆命。' }]); }, 100);
+            }
+        }
+
+        // --- 戰鬥系統 ---
+        function updateHPUIs() {
+            const getHPColor = (current, max) => {
+                const ratio = current / max;
+                if (ratio > 0.5) return 'bg-green-500';
+                if (ratio > 0.2) return 'bg-yellow-400';
+                return 'bg-red-500';
+            };
+            const pBar = document.getElementById('player-hp-bar');
+            pBar.style.width = `${(combatState.playerHp / combatState.maxHp) * 100}%`;
+            pBar.className = `h-full transition-all duration-300 w-full origin-left ${getHPColor(combatState.playerHp, combatState.maxHp)}`;
+            document.getElementById('player-hp-text').innerText = `${combatState.playerHp} / ${combatState.maxHp}`;
+            const eBar = document.getElementById('enemy-hp-bar');
+            eBar.style.width = `${(combatState.enemyHp / combatState.enemyMaxHp) * 100}%`;
+            eBar.className = `h-full transition-all duration-300 w-full origin-left ${getHPColor(combatState.enemyHp, combatState.enemyMaxHp)}`;
+        }
+
+        function queueCombatMsg(text, showMenuAfter = false) {
+            combatState.msgQueue.push({ text, showMenuAfter });
+        }
+
+        function playAnimation(targetId, animClass) {
+            const el = document.getElementById(targetId);
+            el.classList.add(animClass);
+            setTimeout(() => el.classList.remove(animClass), 500);
+        }
+
+        function advanceCombatDialogue() {
+            if (combatState.msgQueue.length === 0) {
+                if (combatState.enemyHp <= 0) {
+                    startDialogue(DIALOGUES.snake_dead);
+                } else if (combatState.playerHp <= 0) {
+                    alert("李寄不幸犧牲，請重新來過。");
+                    setScene('TITLE');
+                }
+                return;
+            }
+
+            const nextMsg = combatState.msgQueue.shift();
+            document.getElementById('combat-text').innerText = nextMsg.text;
+            
+            if (nextMsg.showMenuAfter) {
+                document.getElementById('combat-arrow').classList.add('hidden');
+                document.getElementById('combat-menu').classList.remove('hidden');
+            } else {
+                document.getElementById('combat-arrow').classList.remove('hidden');
+                document.getElementById('combat-menu').classList.add('hidden');
+                if (combatState.msgQueue.length === 0) {
+                    document.getElementById('combat-arrow').classList.add('hidden');
+                }
+            }
+        }
+
+        function startCombat() {
+            combatState = {
+                msgQueue: [], isProcessing: false,
+                playerHp: 100, maxHp: 100,
+                enemyHp: 200, enemyMaxHp: 200, 
+                isPlayerDefending: false
+            };
+            updateHPUIs();
+            setScene('COMBAT');
+            document.getElementById('combat-menu').classList.add('hidden');
+            document.getElementById('combat-arrow').classList.add('hidden');
+            document.getElementById('combat-text').innerText = "頭大如囷的 庸嶺大蛇 出現了！";
+            queueCombatMsg("大蛇正在貪婪地吞食蜜麨...", false);
+            queueCombatMsg("去吧！咋蛇犬！", true);
+        }
+
+        function combatAction(action) {
+            document.getElementById('combat-menu').classList.add('hidden');
+            combatState.isPlayerDefending = false;
+
+            if (action === 'flee') {
+                document.getElementById('combat-text').innerText = "無法逃跑！百姓還在受苦！";
+                queueCombatMsg("請選擇其他行動。", true);
+                document.getElementById('combat-arrow').classList.add('hidden');
+                return;
+            }
+
+            let dmg = 0;
+            if (action === 'attack') {
+                dmg = Math.floor(Math.random() * 21) + 30; 
+                document.getElementById('combat-text').innerText = "李寄 使用了 拔劍斫斬！";
+                playAnimation('anim-wrap-player', 'anim-tackle');
+                setTimeout(() => playAnimation('anim-wrap-enemy', 'anim-shake'), 300);
+            } else if (action === 'dog') {
+                dmg = Math.floor(Math.random() * 16) + 40; 
+                document.getElementById('combat-text').innerText = "咋蛇犬 使用了 放犬咋齧！";
+                playAnimation('anim-wrap-dog', 'anim-tackle');
+                setTimeout(() => playAnimation('anim-wrap-enemy', 'anim-shake'), 300);
+            } else if (action === 'defend') {
+                combatState.isPlayerDefending = true;
+                document.getElementById('combat-text').innerText = "李寄 進入了 防禦狀態！";
+            }
+
+            setTimeout(() => {
+                if (dmg > 0) {
+                    combatState.enemyHp = Math.max(0, combatState.enemyHp - dmg);
+                    updateHPUIs(); queueCombatMsg(`效果非常拔群！造成了 ${dmg} 點傷害！`);
+                }
+                
+                if (combatState.enemyHp <= 0) {
+                    queueCombatMsg("大蛇 倒下了！");
+                    queueCombatMsg("戰鬥勝利！", false);
+                    document.getElementById('combat-arrow').classList.remove('hidden');
+                    return;
+                }
+
+                queueCombatMsg("大蛇 準備攻擊...", false);
+                setTimeout(enemyTurn, 500); 
+                document.getElementById('combat-arrow').classList.remove('hidden');
+            }, 1000);
+        }
+
+        function enemyTurn() {
+            combatState.msgQueue.push({ text: "大蛇因劇痛發狂，張開血盆大口撲來！", showMenuAfter: false });
+            setTimeout(() => {
+                playAnimation('anim-wrap-enemy', 'anim-tackle-reverse');
+                setTimeout(() => playAnimation('anim-wrap-player', 'anim-shake'), 300);
+                
+                let enemyDmg = Math.floor(Math.random() * 11) + 5; 
+                if (combatState.isPlayerDefending) {
+                    enemyDmg = Math.floor(enemyDmg / 4); 
+                    combatState.msgQueue.push({ text: "李寄 擋下了大部分的傷害！", showMenuAfter: false });
+                }
+                combatState.playerHp = Math.max(0, combatState.playerHp - enemyDmg);
+                updateHPUIs();
+
+                if (combatState.playerHp <= 0) {
+                    combatState.msgQueue.push({ text: "李寄 倒下了..." });
+                    combatState.msgQueue.push({ text: "眼前一片漆黑...", showMenuAfter: false });
+                } else { 
+                    combatState.msgQueue.push({ text: "李寄 該怎麼做？", showMenuAfter: true }); 
+                }
+            }, 100);
+        }
+
+        // --- 控制 ---
+        window.addEventListener('keydown', (e) => {
+            if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(e.key)) e.preventDefault();
+            
+            if (gameState === 'TITLE' && (e.key === ' ' || e.key === 'Enter')) startIntro();
+            else if (gameState === 'INTRO' && (e.key === ' ' || e.key === 'Enter')) nextIntro();
+            else if (gameState === 'EXPLORE') {
+                switch (e.key) {
+                    case 'ArrowUp': tryMove(0, -1); break;
+                    case 'ArrowDown': tryMove(0, 1); break;
+                    case 'ArrowLeft': tryMove(-1, 0); break;
+                    case 'ArrowRight': tryMove(1, 0); break;
+                    case ' ': case 'Enter': interact(); break;
+                }
+            } else if (gameState === 'DIALOGUE' || gameState === 'CG') {
+                if (e.key === ' ' || e.key === 'Enter') nextDialogue();
+            } else if (gameState === 'COMBAT') {
+                if ((e.key === ' ' || e.key === 'Enter') && document.getElementById('combat-menu').classList.contains('hidden')) {
+                    advanceCombatDialogue();
+                }
+            }
+        });
+
+        // ★ 確保頁面完全加載後再初始化
+        window.onload = function() {
+            console.log('頁面加載完成！');
+        };
+
+    </script>
+</body>
+</html>
